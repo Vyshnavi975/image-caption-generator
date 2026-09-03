@@ -2,13 +2,11 @@
 llm.py
 ======
 
-Real captioning via a vision-capable LLM API. Two backends are supported:
+Real captioning via a vision-capable LLM API.
 
-  * OpenAI GPT-4 vision (used if OPENAI_API_KEY is set) -- tried first.
-  * Anthropic Claude, as a secondary/alternative backend (used if
-    ANTHROPIC_API_KEY is set and no OpenAI key is available).
+  * OpenAI GPT-4 vision (used if OPENAI_API_KEY is set).
 
-If neither key is set, `get_active_backend()` returns "demo" and callers
+If the key is not set, `get_active_backend()` returns "demo" and callers
 should fall back to captioner.heuristics instead. Network/SDK errors are
 caught and surfaced as CaptionAPIError so the CLI can report them cleanly
 (and optionally fall back to demo mode).
@@ -38,13 +36,11 @@ class CaptionAPIError(RuntimeError):
 
 def get_active_backend() -> str:
     """
-    Return which real backend would be used ("openai", "anthropic"), or
-    "demo" if neither API key is configured.
+    Return which real backend would be used ("openai"), or
+    "demo" if no API key is configured.
     """
     if os.environ.get("OPENAI_API_KEY"):
         return "openai"
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return "anthropic"
     return "demo"
 
 
@@ -95,49 +91,6 @@ def _caption_with_openai(image_path: str, prompt: str) -> str:
     return caption
 
 
-def _caption_with_anthropic(image_path: str, prompt: str) -> str:
-    try:
-        import anthropic
-    except ImportError as exc:
-        raise CaptionAPIError(
-            "The 'anthropic' package is required for Claude vision captioning. "
-            "Install it with: pip install anthropic"
-        ) from exc
-
-    b64_data, mime_type = _read_image_as_base64(image_path)
-    client = anthropic.Anthropic()
-
-    try:
-        response = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=200,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": mime_type,
-                                "data": b64_data,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        )
-    except Exception as exc:  # noqa: BLE001 - surface any SDK/network error uniformly
-        raise CaptionAPIError(f"Anthropic API request failed: {exc}") from exc
-
-    text_blocks = [block.text for block in response.content if getattr(block, "type", "") == "text"]
-    caption = " ".join(text_blocks).strip()
-    if not caption:
-        raise CaptionAPIError("Anthropic API returned an empty response.")
-    return caption
-
-
 def generate_caption(image_path: str, prompt: str = DEFAULT_PROMPT) -> str:
     """
     Generate a caption using whichever real backend is active. Raises
@@ -148,9 +101,7 @@ def generate_caption(image_path: str, prompt: str = DEFAULT_PROMPT) -> str:
     backend = get_active_backend()
     if backend == "openai":
         return _caption_with_openai(image_path, prompt)
-    if backend == "anthropic":
-        return _caption_with_anthropic(image_path, prompt)
     raise CaptionAPIError(
-        "No API key configured. Set OPENAI_API_KEY, or ANTHROPIC_API_KEY as "
-        "an alternative, or use demo mode (captioner.heuristics)."
+        "No API key configured. Set OPENAI_API_KEY, or use demo mode "
+        "(captioner.heuristics)."
     )
